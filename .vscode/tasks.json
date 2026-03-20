@@ -1,0 +1,33 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Compile",
+            "type": "shell",
+            "command": "wsl -d Ubuntu-24.04 -u root -- bash -c 'cobc -x calculate.cob -o calculateExe -free'",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "run test",
+            "type": "shell",
+            "command": "wsl -d Ubuntu-24.04 -u root -- bash -c 'cobc -x calculate.cob -o calculateExe -free && tests/test_calculate.sh'",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

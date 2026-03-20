@@ -1,0 +1,165 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CALCULATE.
+
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+
+           SELECT TRANSACTION-FILE
+           ASSIGN TO "transactions.dat"
+           FILE STATUS IS WS-TRAN-FILE-STATUS
+           ORGANIZATION IS LINE SEQUENTIAL.
+
+           SELECT BALANCE-OUTPUT-FILE
+           ASSIGN TO "balances_out.dat"
+           FILE STATUS IS WS-BA-FILE-STATUS
+           ORGANIZATION IS LINE SEQUENTIAL.
+
+           SELECT OVERDRAFT-OUTPUT-FILE
+           ASSIGN TO "overdraft_out.dat"
+           FILE STATUS IS WS-OD-FILE-STATUS
+           ORGANIZATION IS LINE SEQUENTIAL.
+
+           SELECT REJECT-OUTPUT-FILE
+           ASSIGN TO "reject_out.dat"
+           FILE STATUS IS WS-REJECT-FILE-STATUS
+           ORGANIZATION IS LINE SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+
+       FD  TRANSACTION-FILE.
+       01  TRANSACTION-RECORD.
+           05  TR-ACCOUNT-NUMBER   PIC 9(10).
+           05  TR-TYPE PIC X(1).
+               88 IS-CREDIT VALUE "C".
+               88 IS-DEBIT VALUE "D".
+           05  TR-AMOUNT-ORE PIC 9(10).
+           05  TR-DATE PIC X(8).
+           05  TR-DESCRIPTION PIC X(20).
+
+       FD  BALANCE-OUTPUT-FILE.
+       01  BALANCE-RECORD.
+           05  BA-ACCOUNT-NUMBER PIC 9(10).
+           05  BA-BALANCE-ORE PIC S9(12).
+
+       FD  OVERDRAFT-OUTPUT-FILE.
+       01  OVERDRAWN-RECORD.
+           05  OD-ACCOUNT-NUMBER PIC 9(10).
+           05  OD-BALANCE PIC S9(12).
+
+       FD  REJECT-OUTPUT-FILE.
+       01  REJECT-RECORD.
+           05  RJ-ACCOUNT-NUMBER PIC 9(10).
+           05  RJ-REASON-CODE PIC X(1).
+
+
+       WORKING-STORAGE SECTION.
+
+       01  WS-TRAN-FILE-STATUS PIC X(2).
+           88 IS-OK VALUE "00".
+       01  WS-BA-FILE-STATUS PIC X(2).
+           88 IS-OK VALUE "00".
+       01  WS-OD-FILE-STATUS PIC X(2).
+           88 IS-OK VALUE "00".
+       01  WS-REJECT-FILE-STATUS PIC X(2).
+           88 IS-OK VALUE "00".
+
+       01  WS-EOF-FLAG PIC X(1) VALUE "N".
+           88 EOF VALUE "Y".
+       01  WS-BALANCE PIC S9(12) COMP-3 VALUE ZEROS.
+       01  WS-CURRENT-PROCESS-ACCOUNT PIC 9(10) VALUE ZEROS.
+       01  WS-ANNUAL-RATE PIC V9(4) VALUE .0200 COMP-3.
+       01  WS-INTEREST PIC S9(10)V9(2) COMP-3.
+       01  WS-REJECT-REASON-CODE PIC X(1) VALUE SPACE.
+           88 IS-MALFORMED VALUE "M".
+           88 IS-VALID VALUE SPACE.
+
+
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+
+           OPEN INPUT TRANSACTION-FILE
+           IF NOT IS-OK IN WS-TRAN-FILE-STATUS
+               PERFORM END-WITH-ERROR
+           END-IF.
+           OPEN OUTPUT BALANCE-OUTPUT-FILE
+           IF NOT IS-OK IN WS-BA-FILE-STATUS
+               PERFORM END-WITH-ERROR
+           END-IF.
+           OPEN OUTPUT OVERDRAFT-OUTPUT-FILE
+           IF NOT IS-OK IN WS-OD-FILE-STATUS
+               PERFORM END-WITH-ERROR
+           END-IF.
+           OPEN OUTPUT REJECT-OUTPUT-FILE
+           IF NOT IS-OK IN WS-REJECT-FILE-STATUS
+               PERFORM END-WITH-ERROR
+           END-IF.
+
+           PERFORM UNTIL EOF
+               READ TRANSACTION-FILE
+                   AT END
+                       SET EOF TO TRUE
+                   NOT AT END
+                       PERFORM PROCESS-RECORD
+               END-READ
+           END-PERFORM
+           PERFORM FINALIZE-ACCOUNT
+
+           CLOSE TRANSACTION-FILE
+           CLOSE BALANCE-OUTPUT-FILE
+           CLOSE OVERDRAFT-OUTPUT-FILE
+           CLOSE REJECT-OUTPUT-FILE
+
+           MOVE 0 to RETURN-CODE
+           STOP RUN.
+
+       PROCESS-RECORD.
+           IF WS-CURRENT-PROCESS-ACCOUNT NOT = TR-ACCOUNT-NUMBER
+              IF WS-CURRENT-PROCESS-ACCOUNT NOT = ZEROS
+                  PERFORM FINALIZE-ACCOUNT
+              END-IF
+              PERFORM READY-DATA-FOR-NEW-ACCOUNT
+           END-IF
+
+           EVALUATE TRUE
+              WHEN IS-CREDIT
+                  ADD TR-AMOUNT-ORE TO WS-BALANCE
+              WHEN IS-DEBIT
+                  SUBTRACT TR-AMOUNT-ORE FROM WS-BALANCE
+              WHEN OTHER
+                  SET IS-MALFORMED TO TRUE
+           END-EVALUATE.
+
+
+       FINALIZE-ACCOUNT.
+           IF IS-MALFORMED
+               MOVE WS-CURRENT-PROCESS-ACCOUNT TO RJ-ACCOUNT-NUMBER
+               MOVE WS-REJECT-REASON-CODE TO RJ-REASON-CODE
+               WRITE REJECT-RECORD
+           ELSE
+               IF WS-BALANCE > ZEROS
+                   COMPUTE WS-INTEREST ROUNDED = WS-BALANCE * WS-ANNUAL-RATE / 365
+                   ADD WS-INTEREST TO WS-BALANCE
+               END-IF
+
+               MOVE WS-CURRENT-PROCESS-ACCOUNT TO BA-ACCOUNT-NUMBER
+               MOVE WS-BALANCE TO BA-BALANCE-ORE
+               WRITE BALANCE-RECORD
+
+               IF WS-BALANCE < 0
+                   MOVE WS-CURRENT-PROCESS-ACCOUNT TO OD-ACCOUNT-NUMBER
+                   MOVE WS-BALANCE TO OD-BALANCE
+                   WRITE OVERDRAWN-RECORD
+                END-IF
+           END-IF.
+
+       READY-DATA-FOR-NEW-ACCOUNT.
+           MOVE TR-ACCOUNT-NUMBER TO WS-CURRENT-PROCESS-ACCOUNT
+           SET IS-VALID TO TRUE.
+           MOVE ZEROS TO WS-BALANCE.
+
+       END-WITH-ERROR.
+           MOVE 8 TO RETURN-CODE
+           STOP RUN.
+           
